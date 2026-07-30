@@ -1,0 +1,59 @@
+
+version: 2
+
+sources:
+  - name: nyc
+    database: awsdatacatalog
+    schema: nyc_taxi_database
+
+    tables:
+      - name: raw_nyc_trips
+
+tables:
+  - name: raw_nyc_trips
+    description: Raw data for both green and yellow taxi
+    columns:
+      - name: vendorid
+        description: "Taxi technology provider (1 = Creative Mobile Technologies, 2 = VeriFone Inc., 6 = Myle Technologies Inc, 7 = Helix) - Note: Raw data may contain nulls, filtered in staging"
+      - name: pickup_datetime
+        description: Date and time when the meter was engaged
+      - name: dropoff_datetime
+        description: Date and time when the meter was disengaged
+      - name: passenger_count
+        description: Number of passengers in the vehicle
+      - name: trip_distance
+        description: Trip distance in miles
+      - name: pulocationid
+        description: TLC Taxi Zone where the meter was engaged
+      - name: dolocationid
+        description: TLC Taxi Zone where the meter was disengaged
+      - name: ratecodeid
+        description: Rate code (1=Standard, 2=JFK, 3=Newark, 4=Nassau/Westchester, 5=Negotiated, 6=Group)
+      - name: store_and_fwd_flag
+        description: Trip record held in vehicle memory (Y/N)
+      - name: payment_type
+        description: Payment method (1=Credit card, 2=Cash, 3=No charge, 4=Dispute, 5=Unknown, 6=Voided)
+      - name: fare_amount
+        description: Time and distance fare
+      - name: extra
+        description: Miscellaneous extras and surcharges
+      - name: mta_tax
+        description: MTA tax
+      - name: tip_amount
+        description: Tip amount (credit card only)
+      - name: tolls_amount
+        description: Total tolls paid
+      - name: improvement_surcharge
+        description: Improvement surcharge
+      - name: total_amount
+        description: Total amount charged
+      - name: trip_type
+        description: Trip type (1=Street-hail, 2=Dispatch)
+      - name: ehail_fee
+        description: E-hail fee
+      - name: year
+        description: the year of the source data
+      - name: month
+        description: month of the source data
+      - name: taxi_type
+        description: the type of the taxi took the trip
