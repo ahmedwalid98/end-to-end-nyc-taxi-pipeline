@@ -1,0 +1,6 @@
+__init__.py
+airflow-venv/
+__pycache__/
+terraform/.terraform.*
+terraform/.terraform/
+terraform/terraform.*
