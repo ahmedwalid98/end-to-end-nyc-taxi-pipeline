@@ -1,52 +1,95 @@
+import subprocess
+
 from airflow.sdk import task, dag
+from airflow.providers.amazon.aws.operators.glue_crawler import GlueCrawlerRunOperator
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 import pendulum
-from etl.extract_data import download_file
-from etl.load_data import upload_to_s3
-from etl.silver.transform import read_parquet, merging_yellow_green_trips
+from spark.extract_data import download_file
+from spark.load_data import upload_to_s3
+from spark.transform import read_parquet, merging_yellow_green_trips, split_valid_invalid
 from utils.spark_session import get_spark_session
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 #, catchup=True
 
 @dag(
-      dag_id="ingest_data_v03", schedule='@monthly', start_date=pendulum.datetime(2021, 3, 1, tz='UTC'), max_active_runs=1,tags=["ingest", "load"], catchup=True
+      dag_id="ingest_data_v02", schedule='@monthly', start_date=pendulum.datetime(2021, 3, 1, tz='UTC'), max_active_runs=1,tags=["ingest", "load"], catchup=True
 )
-def ingest_data_dag_v03():
+def ingest_data_dag_v02():
 
+  ingest_green = SparkSubmitOperator(
+     task_id="bronze_green",
+     application="/home/walid/nyc_airflow_taxi/spark/jobs/bronze.py",
+     application_args= [
+        "--year", "{{ data_interval_start.year }}",
+        "--month", "{{ data_interval_start.month }}",
+        "--taxi_type", "green"
+     ],
+    conn_id= "spark_default",
+    packages=(
+        "org.apache.hadoop:hadoop-aws:3.3.4,"
+        "com.amazonaws:aws-java-sdk-bundle:1.12.262"
+    ),
+  )
+
+  ingest_yellow = SparkSubmitOperator(
+       task_id="bronze_yellow",
+       application="/home/walid/nyc_airflow_taxi/spark/jobs/bronze.py",
+       application_args= [
+          "--year", "{{ data_interval_start.year }}",
+          "--month", "{{ data_interval_start.month }}",
+          "--taxi_type", "yellow"
+       ],
+      conn_id= "spark_default",
+      packages=(
+        "org.apache.hadoop:hadoop-aws:3.3.4,"
+        "com.amazonaws:aws-java-sdk-bundle:1.12.262"
+    ),
+    )
+
+  transform = SparkSubmitOperator(
+      task_id="silver_task",
+      application="/home/walid/nyc_airflow_taxi/spark/jobs/silver.py",
+      application_args= [
+          "--year", "{{ data_interval_start.year }}",
+          "--month", "{{ data_interval_start.month }}"
+      ],
+      conn_id= "spark_default",
+      packages=(
+        "org.apache.hadoop:hadoop-aws:3.3.4,"
+        "com.amazonaws:aws-java-sdk-bundle:1.12.262"
+    ),  
+    )
+  run_crawler = GlueCrawlerRunOperator(
+    task_id="run_glue_crawler",
+    crawler_name="nyc-trips-crawler",
+    wait_for_completion=True,
+)
+
+  @task
+  def run_dbt():
+
+    dbt_project_dir = "/home/walid/nyc_airflow_taxi/dbt_taxi_riders"
+
+    logger.info("Running dbt project from %s", dbt_project_dir)
+
+    subprocess.run(
+        ["dbt", "run"],
+        cwd=dbt_project_dir,
+        check=True,
+    )
+
+
+  [ingest_green, ingest_yellow] >> transform
+  transform >> run_crawler 
+  dbt = run_dbt()
+  run_crawler >> dbt
   
-  @task()
-  def ingest_and_upload(taxi_type, data_interval_start=None):
-      
-      spark = get_spark_session()
-      year = data_interval_start.year # type: ignore
-      month = data_interval_start.month # type: ignore
-      df = download_file(spark=spark,year=year, month=month, taxi_type=taxi_type)
-      url = upload_to_s3(df= df,taxi_type=taxi_type, layer='bronze')
-      return {"data_url": url, "taxi_type": taxi_type}
-
-  @task()
-  def tansform_data(content, data_interval_start=None):
-    spark = get_spark_session()
-    green_url = next(c['data_url'] for c in content if c['taxi_type'] == 'green')
-    yellow_url = next(c['data_url'] for c in content if c['taxi_type'] == 'yellow')
-    year = data_interval_start.year # type: ignore
-    month = data_interval_start.month # type: ignore
-    green_df = read_parquet(spark=spark, s3_url=green_url, taxi_type='green', year=year, month=month)
-    yellow_df = read_parquet(spark=spark, s3_url=yellow_url, taxi_type='yellow', year=year, month=month)
-
-    merged_df = merging_yellow_green_trips(yellow_trips=yellow_df, green_trips=green_df)
-    upload_to_s3(df=merged_df, taxi_type='nyc_trips',layer='silver', partition_cols=['year', 'month'])
 
 
-
-
-  taxi_types = ['green', 'yellow']
-  ingest = ingest_and_upload.expand(taxi_type=taxi_types)
-  tansform_data(ingest)
-
-  
-
-
-ingest_data_dag_v03()
+ingest_data_dag_v02()
   
 
 
